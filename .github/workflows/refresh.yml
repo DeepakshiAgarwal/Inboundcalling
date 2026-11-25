@@ -1,0 +1,51 @@
+name: Refresh inbound dashboard
+
+on:
+  schedule:
+    # Every 20 minutes, 08:00-22:40 IST (02:30-17:10 UTC). GitHub can start scheduled runs late or skip some.
+    - cron: "30,50 2 * * *"
+    - cron: "10,30,50 3-16 * * *"
+    - cron: "10 17 * * *"
+  workflow_dispatch:        # "Run workflow" button
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Tests
+        run: python tests/test_dashboard.py
+
+      - name: Pull from Metabase and build
+        env:
+          METABASE_URL: https://metabase.wiom.in
+          METABASE_DATABASE_ID: "113"
+          METABASE_API_KEY: ${{ secrets.METABASE_API_KEY }}
+        run: python build_static.py
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - uses: actions/deploy-pages@v4
+        id: deploy

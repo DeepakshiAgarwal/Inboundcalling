@@ -1,0 +1,1640 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wiom — Daily Inbound Call Dashboard (Service Queue)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --pink:        #E91E8C;
+  --pink-light:  #FCE4EC;
+  --pink-hover:  #F8BBD0;
+  --red:         #C62828;
+  --grey:        #D0D0D0;
+  --grey-soft:   #F5F5F5;
+  --text:        #000;
+  --muted:       #666;
+  --avg-bg:         #E3F2FD;
+  --avg-bg-class:   #BBDEFB;
+  --avg-bg-total:   #90CAF9;
+  --header-grad:  linear-gradient(135deg, #880E4F 0%, #E91E8C 100%);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #FAFAFA; color: var(--text);
+  font-family: -apple-system, "Segoe UI", Calibri, Arial, sans-serif; font-size: 13px; }
+
+/* ---- header ---- */
+header.main-header { padding: 24px 32px 16px; background: #fff;
+  border-bottom: 1px solid var(--grey); }
+header.main-header h1 { margin: 0 0 4px; color: var(--pink); font-size: 24px; font-weight: 700;
+  letter-spacing: -.3px; }
+header.main-header .sub { color: var(--muted); font-size: 11.5px; }
+header.main-header .stats { margin-top: 14px; display: flex; gap: 10px; flex-wrap: nowrap; overflow-x: auto; }
+header.main-header .stats .stat-card {
+  background: #fff; padding: 8px 14px; border-radius: 10px; min-width: 0; flex: 1 1 auto;
+  border: 1px solid var(--pink-light);
+  transition: transform .15s, box-shadow .15s; }
+header.main-header .stats .stat-card:hover { transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(233,30,140,.12); }
+header.main-header .stats .k { color: var(--muted); font-size: 10px;
+  text-transform: uppercase; letter-spacing: .6px; margin-bottom: 2px; }
+header.main-header .stats .v { font-weight: 700; font-size: 18px; color: var(--pink); }
+
+/* ---- highlights bar ---- */
+.highlights { background: #FFF3E0; padding: 10px 32px; border-bottom: 1px solid #FFE0B2;
+  display: none; align-items: center; gap: 12px; flex-wrap: wrap; }
+.highlights.active { display: flex; }
+.hl-title { font-weight: 700; font-size: 11.5px; color: #E65100; white-space: nowrap; }
+.hl-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.hl-chip { background: #fff; border: 1px solid #FFCC80; border-radius: 14px;
+  padding: 3px 12px; font-size: 11.5px; color: var(--text); white-space: nowrap;
+  transition: box-shadow .15s; }
+.hl-chip:hover { box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+.hl-val { font-weight: 700; margin-right: 3px; }
+.hl-pct { color: var(--red); font-size: 10px; font-weight: 600; }
+
+/* ---- tabs ---- */
+nav.tabs { padding: 0 32px; border-bottom: 1px solid var(--grey); background: #fff;
+  position: sticky; top: 0; z-index: 25; display: flex; align-items: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.tab-btn { background: none; border: none; padding: 12px 18px; cursor: pointer;
+  color: var(--muted); font-weight: 600; font-size: 13px;
+  border-bottom: 3px solid transparent; transition: color .15s, border-color .15s; }
+.tab-btn:hover { color: var(--pink); }
+.tab-btn.active { color: var(--pink); border-bottom-color: var(--pink); }
+.tab-spacer { flex: 1; }
+/* search box in tab bar */
+.search-box { position: relative; margin-left: auto; }
+.search-box input { border: 1px solid var(--grey); border-radius: 16px; padding: 6px 14px 6px 32px;
+  font-size: 12px; width: 200px; outline: none; transition: border-color .2s, width .2s; }
+.search-box input:focus { border-color: var(--pink); width: 260px; }
+.search-box svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px; fill: var(--muted); pointer-events: none; }
+
+/* NOTE: do NOT put overflow-x:auto on <main>. */
+main { padding: 20px 32px 60px; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ---- dashboard table ---- */
+table.dash { border-collapse: separate; border-spacing: 0;
+  border: 1px solid var(--grey); background: #fff; font-size: 12.5px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+table.dash th, table.dash td {
+  border-right: 1px solid var(--grey); border-bottom: 1px solid var(--grey);
+  padding: 6px 10px; background-clip: padding-box; }
+table.dash thead th {
+  background: var(--grey-soft); color: var(--text);
+  font-weight: 700; text-align: center;
+  position: sticky; top: 58px; z-index: 20;
+  border-top: 1px solid var(--grey);
+  box-shadow: 0 2px 4px rgba(0,0,0,.08);
+}
+/* first column — sticky left */
+table.dash th:first-child, table.dash td:first-child {
+  position: sticky; left: 0; z-index: 15;
+  box-shadow: 2px 0 4px rgba(0,0,0,.06);
+}
+table.dash thead th:first-child { z-index: 30; }
+
+table.dash td.disp { color: var(--pink); text-align: left; white-space: nowrap; min-width: 300px; }
+table.dash td.disp-class { font-weight: 700; cursor: pointer; user-select: none; }
+table.dash td.disp-code { padding-left: 26px; font-weight: 400; }
+/* toggle icon for collapsible class rows */
+.toggle-icon { display: inline-block; font-size: 9px; margin-right: 4px;
+  transition: transform .2s; color: var(--muted); }
+.toggle-icon.collapsed { transform: rotate(-90deg); }
+
+/* absolute number is ALWAYS black */
+table.dash td.num { color: var(--text); text-align: center; min-width: 100px;
+  cursor: pointer; user-select: none; transition: background .15s; }
+table.dash td.num:hover { filter: brightness(.96); }
+table.dash td.mtd { font-weight: 700; }
+/* spike span — on its own line below the number for clean alignment */
+table.dash td.num .spike { color: var(--red); font-weight: 600; white-space: nowrap;
+  display: block; font-size: 9px; line-height: 1.2; margin-top: 1px; }
+
+/* row backgrounds */
+table.dash tr.row-class td { background: var(--pink-light); }
+table.dash tr.row-class td:first-child { background: var(--pink-light); }
+table.dash tr.row-code  td:first-child { background: #fff; }
+table.dash tr.row-class:hover td { background: var(--pink-hover); }
+table.dash tr.row-class:hover td:first-child { background: var(--pink-hover); }
+/* alternating code rows */
+table.dash tr.row-code:nth-child(even) td { background: #FAFAFA; }
+table.dash tr.row-code:nth-child(even) td:first-child { background: #FAFAFA; }
+table.dash tr.row-code:hover  td { background: #F0F0F0; }
+table.dash tr.row-code:hover  td:first-child { background: #F0F0F0; }
+table.dash tr.row-total td { background: #EEE; font-weight: 700; }
+table.dash tr.row-total td:first-child { background: #EEE; }
+/* hidden code rows (collapsed) */
+table.dash tr.row-code.hidden { display: none; }
+
+/* Avg columns */
+table.dash td.num.avgcol              { background: var(--avg-bg) !important; }
+table.dash tr.row-class td.num.avgcol { background: var(--avg-bg-class) !important; }
+table.dash tr.row-total td.num.avgcol { background: var(--avg-bg-total) !important; }
+table.dash thead th:nth-child(2),
+table.dash thead th:nth-child(3) { background: var(--avg-bg-class); }
+
+/* search highlight */
+table.dash tr.search-miss { display: none; }
+
+/* ---- metrics summary table ---- */
+table.metrics-dash { margin-bottom: 0; }
+table.metrics-dash td.disp-class { background: #E8F5E9 !important; color: #2E7D32; font-weight: 700; }
+table.metrics-dash tr.row-class:hover td { background: #C8E6C9 !important; }
+table.metrics-dash thead th { background: #E8F5E9 !important; color: #2E7D32; }
+table.metrics-dash thead th:nth-child(2),
+table.metrics-dash thead th:nth-child(3) { background: #C8E6C9 !important; }
+table.metrics-dash td.num.avgcol { background: #C8E6C9 !important; }
+
+.legend { margin: 10px 0 16px; color: var(--muted); font-size: 11.5px; line-height: 1.6;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.legend b { color: var(--text); }
+.legend .pill { background: var(--grey-soft); padding: 3px 10px; border-radius: 10px;
+  font-size: 11px; }
+
+.chart-wrap { background: #fff; padding: 20px 24px 16px; border: 1px solid var(--grey);
+  border-radius: 8px; margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  box-sizing: border-box; width: 100%; }
+
+/* chart filter bar */
+.chart-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 14px; padding: 10px 16px; background: #fff;
+  border: 1px solid var(--grey); border-radius: 8px; }
+.filter-label { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.chart-controls select { border: 1px solid var(--grey); border-radius: 6px;
+  padding: 5px 10px; font-size: 12px; min-width: 220px; outline: none;
+  cursor: pointer; transition: border-color .2s; }
+.chart-controls select:focus { border-color: var(--pink); }
+.filter-clear-btn { background: none; border: 1px solid var(--grey); border-radius: 6px;
+  padding: 4px 10px; font-size: 11px; color: var(--muted); cursor: pointer;
+  transition: border-color .15s, color .15s; }
+.filter-clear-btn:hover { border-color: var(--red); color: var(--red); }
+.filter-note { font-size: 11px; color: var(--pink); font-weight: 600; }
+.view-toggle-group { display: flex; align-items: center; gap: 4px; }
+.view-toggle-btn { border: 1px solid var(--grey); border-radius: 6px;
+  padding: 5px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+  background: #fff; color: var(--muted); transition: all .15s; }
+.view-toggle-btn.active { background: var(--pink); color: #fff; border-color: var(--pink); }
+.view-toggle-btn:not(.active):hover { border-color: var(--pink); color: var(--pink); }
+footer { color: var(--muted); font-size: 11px; text-align: center; padding: 24px;
+  background: #fff; border-top: 1px solid var(--grey); }
+
+/* ---- Current tab ---- */
+.curr-date-filter { display:flex; align-items:center; margin-bottom:18px;
+  padding:10px 14px; background:#fff7fb; border:1px solid #f8bbd0;
+  border-radius:8px; gap:8px; }
+.curr-date-filter select:focus { outline:none; box-shadow:0 0 0 2px #e91e8c44; }
+.curr-banner { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:20px; }
+.curr-table { border-collapse:separate; border-spacing:0; border:1px solid var(--grey);
+  background:#fff; font-size:12.5px; box-shadow:0 1px 4px rgba(0,0,0,.06);
+  width:100%; margin-bottom:24px; }
+.curr-table th { background:var(--grey-soft); font-weight:700; text-align:center;
+  padding:7px 10px; border-right:1px solid var(--grey); border-bottom:2px solid var(--grey);
+  position:sticky; top:58px; z-index:20; white-space:nowrap; }
+.curr-table td { padding:6px 10px; border-right:1px solid var(--grey);
+  border-bottom:1px solid var(--grey); text-align:center; }
+.curr-hour-cell { font-weight:700; color:var(--pink); text-align:left !important;
+  background:#fff; position:sticky; left:0; z-index:10;
+  box-shadow:2px 0 4px rgba(0,0,0,.05); white-space:nowrap; }
+.curr-avg-cell  { background:#E3F2FD !important; font-weight:700; color:#1565C0; }
+.curr-normal    { background:#fff; color:#333; }
+.curr-red       { background:#FFEBEE !important; color:#C62828; }
+.curr-orange    { background:#FFF3E0 !important; color:#E65100; }
+.curr-pending   { background:#FAFAFA; color:#bbb; font-style:italic; }
+.curr-past      { background:#fff; color:#555; }
+.curr-badge     { display:block; font-size:10px; font-weight:700; margin-top:1px; }
+.curr-small     { color:#999; font-size:10px; }
+.curr-row-spike td { outline:none; }
+.curr-row-spike .curr-hour-cell { border-left:3px solid var(--red); }
+
+/* spike remarks */
+.spike-remarks-wrap { margin-top:28px; }
+.spike-remarks-hdr  { font-size:14px; font-weight:700; color:#333; margin-bottom:14px;
+  padding-bottom:6px; border-bottom:2px solid var(--pink-light); }
+.spike-cards-row { display:flex; gap:16px; flex-wrap:wrap; }
+.spike-card { background:#fff; border:1px solid var(--grey); border-radius:10px;
+  padding:14px 18px; min-width:340px; flex:1;
+  box-shadow:0 2px 8px rgba(0,0,0,.06); }
+.spike-card-title { font-size:13px; margin-bottom:10px; }
+.spike-disp-table { width:100%; border-collapse:collapse; font-size:12px; }
+.spike-disp-table th { background:var(--grey-soft); padding:5px 8px; text-align:left;
+  border-bottom:1px solid var(--grey); font-weight:700; }
+.spike-disp-table td { padding:5px 8px; border-bottom:1px solid #f0f0f0; text-align:left; }
+.spike-disp-table tr:last-child td { border-bottom:none; }
+
+/* raw-data drill-through modal */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5);
+  display: none; align-items: flex-start; justify-content: center; z-index: 100;
+  padding: 40px 20px; overflow-y: auto; backdrop-filter: blur(2px); }
+.modal-backdrop.open { display: flex; }
+.modal { background: #fff; max-width: 1200px; width: 100%; border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25); overflow: hidden;
+  animation: modalIn .2s ease-out; }
+@keyframes modalIn { from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); } }
+.modal header { padding: 14px 20px; border-bottom: 1px solid var(--grey);
+  display: flex; justify-content: space-between; align-items: center;
+  background: var(--grey-soft); }
+.modal header h2 { margin: 0; font-size: 15px; color: var(--pink); }
+.modal header .close { cursor: pointer; background: none; border: none;
+  font-size: 22px; color: var(--muted); transition: color .15s; }
+.modal header .close:hover { color: var(--red); }
+.modal .body { padding: 14px 20px; max-height: 70vh; overflow: auto; }
+.modal .meta { color: var(--muted); font-size: 11.5px; margin-bottom: 10px; }
+.modal table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.modal th, .modal td { border: 1px solid var(--grey); padding: 5px 8px;
+  text-align: left; vertical-align: top; }
+.modal th { background: var(--grey-soft); position: sticky; top: 0; }
+.modal .download { margin-left: 10px; font-size: 12px; padding: 6px 12px;
+  background: var(--pink); color: #fff; border: none; border-radius: 6px;
+  cursor: pointer; transition: background .15s; }
+.modal .download:hover { background: #C2185B; }
+.modal .loading { color: var(--muted); font-style: italic; padding: 20px 0; }
+.modal .error { color: var(--red); padding: 12px; background: #FFEBEE; border-radius: 6px; }
+</style>
+</head>
+<body>
+
+<header class="main-header">
+  <h1>Daily Inbound Call Summary &mdash; Service Queue</h1>
+  <div class="sub">
+    Source: Metabase &middot; PROD_DB.PUBLIC.AMEYO_CALL_DETAILS_REPORT &middot;
+    QUEUE_NAME IN (high_pain_queue, low_pain_queue) &middot;
+    CALL_TYPE = inbound.call.dial
+  </div>
+  <div class="stats">
+    <div class="stat-card"><div class="k">Months</div><div class="v">@@N_MONTHS@@</div></div>
+    <div class="stat-card"><div class="k">Categories</div><div class="v" id="stat-cats">@@N_CATS@@</div></div>
+    <div class="stat-card"><div class="k">Sub-category Issues</div><div class="v" id="stat-codes">@@N_CODES@@</div></div>
+    <div class="stat-card"><div class="k" id="stat-total-label">Total Inbound Calls</div><div class="v" id="stat-total">-</div></div>
+    <div class="stat-card"><div class="k" id="stat-miss-label">Missed Call % (MTD)</div><div class="v" id="stat-miss">-</div></div>
+    <div class="stat-card"><div class="k" id="stat-aht-label">Avg AHT</div><div class="v" id="stat-aht">-</div></div>
+    <div class="stat-card"><div class="k" id="stat-paying-label">Paying Devices</div><div class="v" id="stat-paying">-</div></div>
+    <div class="stat-card"><div class="k" id="stat-active-label">Active R15 Customers</div><div class="v" id="stat-active">-</div></div>
+    <div class="stat-card"><div class="k">Last Refreshed</div><div class="v">@@AS_OF@@</div>
+      <button onclick="manualRefresh(this)" style="margin-top:4px;padding:3px 10px;font-size:11px;cursor:pointer;border:1px solid #d32f2f;background:#fff;color:#d32f2f;border-radius:4px;font-weight:600;">Refresh Now</button></div>
+  </div>
+</header>
+
+@@HIGHLIGHTS@@
+
+<nav class="tabs">
+  @@TABS@@
+  <div class="search-box">
+    <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+    <input type="text" id="searchInput" placeholder="Filter categories..." />
+  </div>
+</nav>
+
+<main>
+  <div class="legend">
+    <span class="pill">&#x26A0; Threshold</span>
+    value <b>&ge; 100 &rarr; +15 %</b> &middot;
+    value <b>20 &ndash; 99 &rarr; +25 %</b> &middot;
+    value <b>&lt; 20 &rarr; +100 %</b>
+    &middot; Double-click any number for raw call records.
+  </div>
+  <section id="tab-current" class="tab-panel">
+<div class="curr-date-filter">
+  <label for="currDateSel" style="font-weight:600;margin-right:8px">&#128197; View Date:</label>
+  <select id="currDateSel" onchange="renderCurrent(this.value)"
+    style="padding:6px 14px;border-radius:6px;border:1.5px solid #e91e8c;
+           font-size:14px;cursor:pointer;background:#fff;color:#222">
+    @@DATE_OPTIONS@@
+    
+  </select>
+</div>
+
+<div id="curr-banner" class="curr-banner"></div>
+<div id="isd-daily-row"></div>
+
+<div class="chart-wrap"
+  style="position:relative;height:360px;width:100%;overflow:hidden;margin-bottom:24px;">
+  <canvas id="currentChart"></canvas>
+</div>
+
+<div id="curr-table-wrap"></div>
+<div id="curr-spike-wrap"></div>
+
+<hr style="margin:32px 0;border:none;border-top:2px dashed #e91e8c">
+<h3 style="margin:0 0 16px;color:#333;font-size:16px">&#127760; Wiom Net Queue &mdash; Hourly Call Volume</h3>
+<div id="wn-banner" class="curr-banner"></div>
+<div class="chart-wrap"
+  style="position:relative;height:360px;width:100%;overflow:hidden;margin-bottom:24px;">
+  <canvas id="wnChart"></canvas>
+</div>
+<div id="wn-table-wrap"></div>
+<div id="wn-spike-wrap"></div>
+
+<script>
+(function(){
+var HOURS    = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+var H_LABELS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00"];
+var TODAY    = "@@TODAY@@";
+var PAYLOAD  = @@PAYLOAD@@;
+var ALL_T    = @@ALL_T@@;
+var ISD_DAILY= @@ISD_DAILY@@;
+var WN_PAYLOAD = @@WN_PAYLOAD@@;
+var WN_ALL_T   = @@WN_ALL_T@@;
+var WN_MW      = @@WN_MW@@;
+var _chart   = null;
+var _wn_chart = null;
+var MIN_CLS  = 20, MIN_CODE = 10;
+
+function spikeOf(tv, av) {
+  if (tv == null || av <= 0) return null;
+  var p = (tv - av) / av * 100;
+  if (p >= 25) return {st:'red',    pct:Math.round(p)};
+  if (p >= 15) return {st:'orange', pct:Math.round(p)};
+  return null;
+}
+
+function fmtD(ds) {
+  var parts = ds.split('-');
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return parts[2] + '-' + months[parseInt(parts[1],10)-1];
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+window.renderCurrent = function(dateStr) {
+  var P = PAYLOAD[dateStr];
+  if (!P) return;
+  var T = P.t, A = P.a, past = P.p || [];
+  var isToday = (dateStr === TODAY);
+  var dLabel  = isToday ? 'Today' : fmtD(dateStr);
+
+  // ── Banner ─────────────────────────────────────────────────────
+  // Only count hours with actual data (T[h] != null) for today's pending slots
+  var tTot=0, aTot=0, nRed=0, nOra=0;
+  HOURS.forEach(function(h) {
+    var tv = T[h];
+    if (tv !== null && tv !== undefined) {
+      tTot += tv;
+      aTot += A[h]||0;   // avg counted only for completed hours
+    }
+    var sp = spikeOf(tv, A[h]);
+    if (sp && sp.st==='red')    nRed++;
+    if (sp && sp.st==='orange') nOra++;
+  });
+  var vsPct  = aTot > 0 ? (tTot - aTot) / aTot * 100 : 0;
+  var vsCol  = vsPct > 15 ? '#C62828' : vsPct > 0 ? '#E65100' : '#2E7D32';
+  var vsArr  = vsPct >= 0 ? '&uarr;' : '&darr;';
+  var spLbl  = (nRed||nOra)
+    ? '&#128308; '+nRed+' hot, &#128992; '+nOra+' warm'
+    : '<span style="color:#2E7D32">&#10003; All normal</span>';
+
+  document.getElementById('curr-banner').innerHTML =
+    '<div class="stat-card"><div class="k">Calls ('+esc(dLabel)+')</div>'+
+    '<div class="v">'+tTot.toLocaleString()+'</div></div>'+
+    '<div class="stat-card"><div class="k">7D Avg (same slots)</div>'+
+    '<div class="v">'+Math.round(aTot).toLocaleString()+'</div></div>'+
+    '<div class="stat-card"><div class="k">vs 7D Avg</div>'+
+    '<div class="v" style="color:'+vsCol+'">'+(vsPct>=0?'+':'')+
+    vsPct.toFixed(1)+'% '+vsArr+'</div></div>'+
+    '<div class="stat-card"><div class="k">Spike Slots</div>'+
+    '<div class="v" style="font-size:14px">'+spLbl+'</div></div>';
+
+  // ── Chart ───────────────────────────────────────────────────────
+  var cToday  = HOURS.map(function(h){ return (T[h]!=null) ? T[h] : null; });
+  var cAvg    = HOURS.map(function(h){ return A[h]||0; });
+  var cColors = HOURS.map(function(h){
+    var sp = spikeOf(T[h], A[h]);
+    return sp ? (sp.st==='red' ? '#C62828bb' : '#FB8C00bb') : '#1E88E5bb';
+  });
+  var ctx = document.getElementById('currentChart').getContext('2d');
+  if (_chart) { _chart.destroy(); _chart = null; }
+  _chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: H_LABELS,
+      datasets: [
+        { label: dLabel, data: cToday, backgroundColor: cColors,
+           borderRadius: 4, borderSkipped: false, order: 2 },
+        { label: '7-Day Avg', data: cAvg, type: 'line',
+           borderColor: '#E91E8C', backgroundColor: '#E91E8C15',
+           borderWidth: 2.5, pointRadius: 5, pointHoverRadius: 8,
+           tension: 0.3, fill: false, order: 1 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      devicePixelRatio: window.devicePixelRatio || 2,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        title: { display: true,
+          text: 'Hourly Call Volume — ' + dLabel + ' vs 7-Day Average',
+          font: { size: 14, weight: 'bold' }, padding: { bottom: 14 } },
+        legend: { position: 'top', labels: { boxWidth: 14, font: { size: 12 } } }
+      },
+      scales: {
+        x: { ticks: { font: { size: 12 }, color: '#333' }, grid: { color: '#eee' } },
+        y: { title: { display: true, text: 'Calls / hour', font: { size: 12 } },
+              ticks: { font: { size: 11 } }, grid: { color: '#eee' }, beginAtZero: true }
+      }
+    }
+  });
+
+  // ── Table ───────────────────────────────────────────────────────
+  var thCells =
+    '<th style="text-align:left">Hour</th>'+
+    '<th style="background:#BBDEFB;color:#1565C0">7D Avg</th>'+
+    '<th style="background:#FCE4EC;color:#880E4F">'+esc(dLabel)+'</th>';
+  past.forEach(function(pd){ thCells += '<th>'+fmtD(pd)+'</th>'; });
+
+  var rows = '';
+  HOURS.forEach(function(h) {
+    var tv=T[h], av=A[h]||0;
+    var sp = spikeOf(tv, av);
+    var hl = (h<10?'0':'')+h+':00';
+    var tdT;
+    if (tv==null) {
+      tdT = '<td class="curr-pending">—</td>';
+    } else if (sp && sp.st==='red') {
+      tdT = '<td class="curr-red"><b>'+tv.toLocaleString()+'</b>'+
+            '<span class="curr-badge">+'+sp.pct+'%&uarr;</span></td>';
+    } else if (sp && sp.st==='orange') {
+      tdT = '<td class="curr-orange"><b>'+tv.toLocaleString()+'</b>'+
+            '<span class="curr-badge">+'+sp.pct+'%&uarr;</span></td>';
+    } else {
+      var p2 = av>0 ? Math.round((tv-av)/av*100) : 0;
+      var sg = p2>0 ? '+'+p2+'%' : (p2<0 ? p2+'%' : '');
+      tdT = '<td class="curr-normal">'+tv.toLocaleString()+
+            '<small class="curr-small"> '+sg+'</small></td>';
+    }
+    var pastTDs = '';
+    past.forEach(function(pd){
+      var pv = (ALL_T[pd]||{})[String(h)]||0;
+      pastTDs += '<td class="curr-past">'+pv.toLocaleString()+'</td>';
+    });
+    rows += '<tr class="'+(sp?'curr-row-spike':'')+'">'+
+            '<td class="curr-hour-cell">'+hl+'</td>'+
+            '<td class="curr-avg-cell">'+Math.round(av).toLocaleString()+'</td>'+
+            tdT+pastTDs+'</tr>';
+  });
+
+  // ── Total row ───────────────────────────────────────────────────
+  var totAvg = 0, totToday = 0, todayHasData = false;
+  var totPast = {};
+  past.forEach(function(pd){ totPast[pd] = 0; });
+  HOURS.forEach(function(h) {
+    var tv=T[h], av=A[h]||0;
+    if (tv !== null && tv !== undefined) {
+      totToday += tv;
+      totAvg   += av;   // avg only for completed slots
+      todayHasData = true;
+    }
+    past.forEach(function(pd){
+      totPast[pd] += (ALL_T[pd]||{})[String(h)]||0;
+    });
+  });
+  var totTodayTd = todayHasData
+    ? '<td style="background:#FCE4EC;color:#880E4F;font-weight:700">'+totToday.toLocaleString()+'</td>'
+    : '<td class="curr-pending">—</td>';
+  var totPastTDs = '';
+  past.forEach(function(pd){
+    totPastTDs += '<td style="font-weight:700">'+totPast[pd].toLocaleString()+'</td>';
+  });
+  var totalRow =
+    '<tr style="background:#f0f4ff;border-top:2px solid #90CAF9;font-weight:700">'+
+    '<td class="curr-hour-cell" style="font-weight:700;color:#1565C0">Total</td>'+
+    '<td class="curr-avg-cell" style="font-weight:700">'+Math.round(totAvg).toLocaleString()+'</td>'+
+    totTodayTd + totPastTDs + '</tr>';
+
+  document.getElementById('curr-table-wrap').innerHTML =
+    '<table class="curr-table"><thead><tr>'+thCells+'</tr></thead>'+
+    '<tbody>'+rows+totalRow+'</tbody></table>';
+
+  // ── Spike Remarks ───────────────────────────────────────────────
+  var spHours = HOURS.filter(function(h){ return spikeOf(T[h], A[h]) !== null; });
+  if (!spHours.length) {
+    document.getElementById('curr-spike-wrap').innerHTML = ''; return;
+  }
+
+  var cards = '';
+  spHours.forEach(function(h) {
+    var tv=T[h]||0, av=A[h]||0;
+    var sp=spikeOf(tv,av);
+    var hlbl=(h<10?'0':'')+h+':00–'+(h+1<10?'0':'')+(h+1)+':00';
+    var bcol=sp.st==='red'?'#C62828':'#E65100';
+    var em  =sp.st==='red'?'&#128308;':'&#128992;';
+    var ctH =P.ct?P.ct[String(h)]||{}:{};
+    var acH =P.ac?P.ac[String(h)]||{}:{};
+    var coH =P.co?P.co[String(h)]||{}:{};
+    var aoH =P.ao?P.ao[String(h)]||{}:{};
+
+    var allC=new Set([].concat(Object.keys(ctH),Object.keys(acH)));
+    var clsRows=[];
+    allC.forEach(function(c){
+      var tv2=ctH[c]||0, av2=acH[c]||0;
+      if (tv2<MIN_CLS && av2<MIN_CLS) return;
+      var dp=av2>0?(tv2-av2)/av2*100:(tv2>0?100:0);
+      clsRows.push([c,tv2,av2,Math.round(dp)]);
+    });
+    clsRows.sort(function(a,b){ return b[3]-a[3]||b[1]-a[1]; });
+    clsRows=clsRows.slice(0,8);
+    if (!clsRows.length) return;
+
+    var trs='';
+    clsRows.forEach(function(row){
+      var c=row[0],tv2=row[1],av2=row[2],dp=row[3];
+      var ps=(dp>=0?'+':'')+dp+'%', pc;
+      if (dp>=25)       pc='<td style="color:#C62828;font-weight:700">'+ps+' &#8679;</td>';
+      else if (dp>=15)  pc='<td style="color:#E65100;font-weight:600">'+ps+' &#8679;</td>';
+      else if (dp<=-15) pc='<td style="color:#2E7D32">'+ps+' &#8681;</td>';
+      else              pc='<td style="color:#555">'+ps+'</td>';
+      trs+='<tr style="background:#f9f9f9">'+
+           '<td style="font-weight:700;color:var(--pink)">'+esc(c)+'</td>'+
+           '<td><b>'+tv2.toLocaleString()+'</b></td>'+
+           '<td>'+Math.round(av2)+'</td>'+pc+'</tr>';
+
+      // Sub-code rows (populated for today; empty for past dates — coH/aoH = {})
+      var ctC=coH[c]||{}, avC=aoH[c]||{};
+      var allCo=new Set([].concat(Object.keys(ctC),Object.keys(avC)));
+      var coRows=[];
+      allCo.forEach(function(co){
+        var tv3=ctC[co]||0, av3=avC[co]||0;
+        if (tv3<MIN_CODE && av3<MIN_CODE) return;
+        var dp3=av3>0?(tv3-av3)/av3*100:(tv3>0?100:0);
+        coRows.push([co,tv3,av3,Math.round(dp3)]);
+      });
+      coRows.sort(function(a,b){ return b[3]-a[3]||b[1]-a[1]; });
+      coRows.slice(0,5).forEach(function(cr){
+        var co=cr[0],tv3=cr[1],av3=cr[2],dp3=cr[3];
+        var ps3=(dp3>=0?'+':'')+dp3+'%', pc3;
+        if (dp3>=25)       pc3='<span style="color:#C62828;font-weight:700">'+ps3+' &#8679;</span>';
+        else if (dp3>=15)  pc3='<span style="color:#E65100;font-weight:600">'+ps3+' &#8679;</span>';
+        else if (dp3<=-15) pc3='<span style="color:#2E7D32">'+ps3+' &#8681;</span>';
+        else               pc3='<span style="color:#888">'+ps3+'</span>';
+        trs+='<tr>'+
+             '<td style="padding-left:24px;color:#555">&#x21B3; '+esc(co)+'</td>'+
+             '<td>'+tv3.toLocaleString()+'</td>'+
+             '<td>'+Math.round(av3)+'</td>'+
+             '<td>'+pc3+'</td></tr>';
+      });
+    });
+
+    if (!trs) return;
+
+    // ── ISD CSP/ISP block ───────────────────────────────────────────
+    var isdH = P.isd ? P.isd[String(h)] || {} : {};
+    var isdBlock = '';
+    if (isdH.csp && isdH.csp.length) {
+      var isdTotal = isdH.csp.reduce(function(s,r){return s+r[1];},0);
+      var cspTrs = '';
+      isdH.csp.forEach(function(row,i){
+        var pct = isdTotal>0 ? Math.round(row[1]/isdTotal*100) : 0;
+        cspTrs += '<tr><td style="padding:3px 8px;border-bottom:1px solid #eee">'+(i+1)+'. '+esc(row[0])+'</td>'+
+                  '<td style="text-align:center;padding:3px 6px;border-bottom:1px solid #eee;font-weight:600">'+row[1]+'</td>'+
+                  '<td style="text-align:center;padding:3px 6px;border-bottom:1px solid #eee;color:#555">'+pct+'%</td></tr>';
+      });
+      var ispTrs = '';
+      (isdH.isp||[]).forEach(function(row,i){
+        ispTrs += '<tr><td style="padding:3px 8px;border-bottom:1px solid #eee">'+(i+1)+'. '+esc(row[0])+'</td>'+
+                  '<td style="text-align:center;padding:3px 6px;border-bottom:1px solid #eee;font-weight:600">'+row[1]+'</td></tr>';
+      });
+      isdBlock =
+        '<div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;font-size:12px">'+
+          '<div style="flex:1;min-width:180px;border:1px solid #BBDEFB;border-radius:4px;overflow:hidden">'+
+            '<div style="background:#1565C0;color:#fff;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px">&#128225; Top 5 CSP Impacted</div>'+
+            '<table style="width:100%;border-collapse:collapse">'+
+            '<thead><tr style="background:#E3F2FD"><th style="text-align:left;padding:3px 8px;font-weight:600">CSP / Partner</th><th style="text-align:center;padding:3px 6px;font-weight:600">Calls</th><th style="text-align:center;padding:3px 6px;font-weight:600">Share</th></tr></thead>'+
+            '<tbody>'+cspTrs+'</tbody></table></div>'+
+          (ispTrs ?
+          '<div style="flex:0 0 170px;border:1px solid #E1BEE7;border-radius:4px;overflow:hidden">'+
+            '<div style="background:#6A1B9A;color:#fff;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px">&#127760; Top 3 ISP Outage</div>'+
+            '<table style="width:100%;border-collapse:collapse">'+
+            '<thead><tr style="background:#F3E5F5"><th style="text-align:left;padding:3px 8px;font-weight:600">ISP</th><th style="text-align:center;padding:3px 6px;font-weight:600">Calls</th></tr></thead>'+
+            '<tbody>'+ispTrs+'</tbody></table></div>' : '')+
+        '</div>';
+    }
+
+    cards+='<div class="spike-card">'+
+           '<div class="spike-card-title">'+em+' <b>'+esc(hlbl)+'</b>'+
+           ' &mdash; '+tv.toLocaleString()+' calls vs 7D avg '+Math.round(av).toLocaleString()+
+           ' <span style="color:'+bcol+';font-weight:700"> (+'+sp.pct+'%)</span></div>'+
+           '<table class="spike-disp-table"><thead>'+
+           '<tr><th>Disposition Class / Sub-category</th>'+
+           '<th>'+esc(dLabel)+'</th><th>7D Avg</th><th>vs Avg</th></tr></thead>'+
+           '<tbody>'+trs+'</tbody></table>'+
+           isdBlock+'</div>';
+  });
+
+  document.getElementById('curr-spike-wrap').innerHTML = cards ?
+    '<div class="spike-remarks-wrap">'+
+    '<div class="spike-remarks-hdr">&#128269; Spike Remarks &mdash; What drove the spike?</div>'+
+    '<div class="spike-cards-row">'+cards+'</div></div>' : '';
+
+  renderISDDailyRow(dateStr);
+
+  // Render Wiom Net section
+  renderWiomNetCurrent(dateStr);
+}
+
+function renderISDDailyRow(dateStr) {
+  var el = document.getElementById('isd-daily-row');
+  if (!el) return;
+  var d = ISD_DAILY[dateStr];
+  if (!d || !d.csp || !d.csp.length) { el.innerHTML = ''; return; }
+
+  var total = d.total || 0;
+  var dLabel = fmtD(dateStr);
+
+  // CSP pills
+  var cspPills = '';
+  d.csp.forEach(function(row, i) {
+    var pct = total > 0 ? Math.round(row[1] / total * 100) : 0;
+    var bg  = i === 0 ? '#1565C0' : i === 1 ? '#1976D2' : '#1E88E5';
+    cspPills +=
+      '<span style="display:inline-flex;align-items:center;gap:5px;background:'+bg+';color:#fff;'+
+      'border-radius:16px;padding:3px 10px;font-size:11px;white-space:nowrap">'+
+      '<b>'+(i+1)+'.</b> '+esc(row[0])+
+      ' &nbsp;<span style="background:rgba(255,255,255,.25);border-radius:10px;padding:1px 6px">'+
+      row[1]+' calls &middot; '+pct+'%</span></span>';
+  });
+
+  // ISP pills
+  var ispPills = '';
+  (d.isp || []).forEach(function(row, i) {
+    var bg2 = i === 0 ? '#6A1B9A' : i === 1 ? '#7B1FA2' : '#8E24AA';
+    ispPills +=
+      '<span style="display:inline-flex;align-items:center;gap:5px;background:'+bg2+';color:#fff;'+
+      'border-radius:16px;padding:3px 10px;font-size:11px;white-space:nowrap">'+
+      '<b>'+(i+1)+'.</b> '+esc(row[0])+
+      ' &nbsp;<span style="background:rgba(255,255,255,.25);border-radius:10px;padding:1px 6px">'+
+      row[1]+' calls</span></span>';
+  });
+
+  el.innerHTML =
+    '<div style="margin:0 0 16px;padding:10px 16px;background:#FFF8E1;border:1px solid #FFE082;'+
+    'border-radius:8px;display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">'+
+      '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+
+        '<span style="font-size:16px">&#127982;</span>'+
+        '<div>'+
+          '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#E65100">'+
+            'ISD on '+esc(dLabel)+' &mdash; '+total.toLocaleString()+' calls</div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">'+
+        '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#1565C0">&#128225; Top CSP:</span>'+
+        cspPills+
+      '</div>'+
+      (ispPills ?
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">'+
+        '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#6A1B9A">&#127760; ISP Outage:</span>'+
+        ispPills+
+      '</div>' : '')+
+    '</div>';
+}
+
+function renderWiomNetCurrent(dateStr) {
+  var P = WN_PAYLOAD[dateStr];
+  var bannerEl = document.getElementById('wn-banner');
+  var tableEl  = document.getElementById('wn-table-wrap');
+  if (!P) {
+    if (bannerEl) bannerEl.innerHTML = '<div style="color:#888;font-style:italic;padding:12px 0">No Wiom Net Queue data for this date.</div>';
+    if (tableEl)  tableEl.innerHTML  = '';
+    var c2 = document.getElementById('wnChart');
+    if (c2 && _wn_chart) { _wn_chart.destroy(); _wn_chart = null; }
+    return;
+  }
+  var WN_H  = P.h  || HOURS;
+  var WN_HL = WN_H.map(function(h){ return (h<10?'0':'')+h+':00'; });
+  var T = P.t, A = P.a, past = P.p || [];
+  var isToday = (dateStr === TODAY);
+  var dLabel  = isToday ? 'Today' : fmtD(dateStr);
+
+  // Banner
+  var tTot=0, aTot=0;
+  WN_H.forEach(function(h) {
+    var tv = T[h];
+    if (tv !== null && tv !== undefined) { tTot += tv; aTot += A[h]||0; }
+  });
+  var vsPct = aTot > 0 ? (tTot - aTot) / aTot * 100 : 0;
+  var vsCol = vsPct > 15 ? '#C62828' : vsPct > 0 ? '#E65100' : '#2E7D32';
+  var vsArr = vsPct >= 0 ? '&uarr;' : '&darr;';
+  if (bannerEl) bannerEl.innerHTML =
+    '<div class="stat-card"><div class="k">WN Calls ('+esc(dLabel)+')</div>'+
+    '<div class="v">'+tTot.toLocaleString()+'</div></div>'+
+    '<div class="stat-card"><div class="k">7D Avg (same slots)</div>'+
+    '<div class="v">'+Math.round(aTot).toLocaleString()+'</div></div>'+
+    '<div class="stat-card"><div class="k">vs 7D Avg</div>'+
+    '<div class="v" style="color:'+vsCol+'">'+(vsPct>=0?'+':'')+
+    vsPct.toFixed(1)+'% '+vsArr+'</div></div>';
+
+  // Chart
+  var cToday = WN_H.map(function(h){ return (T[h]!=null) ? T[h] : null; });
+  var cAvg   = WN_H.map(function(h){ return A[h]||0; });
+  var ctx2 = document.getElementById('wnChart').getContext('2d');
+  if (_wn_chart) { _wn_chart.destroy(); _wn_chart = null; }
+  _wn_chart = new Chart(ctx2, {
+    type: 'bar',
+    data: {
+      labels: WN_HL,
+      datasets: [
+        { label: dLabel, data: cToday, backgroundColor: '#7B1FA2bb',
+           borderRadius: 4, borderSkipped: false, order: 2 },
+        { label: '7-Day Avg', data: cAvg, type: 'line',
+           borderColor: '#E91E8C', backgroundColor: '#E91E8C15',
+           borderWidth: 2.5, pointRadius: 5, pointHoverRadius: 8,
+           tension: 0.3, fill: false, order: 1 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      devicePixelRatio: window.devicePixelRatio || 2,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        title: { display: true,
+          text: 'Wiom Net Queue — Hourly Call Volume — ' + dLabel + ' vs 7-Day Average',
+          font: { size: 14, weight: 'bold' }, padding: { bottom: 14 } },
+        legend: { position: 'top', labels: { boxWidth: 14, font: { size: 12 } } }
+      },
+      scales: {
+        x: { ticks: { font: { size: 12 }, color: '#333' }, grid: { color: '#eee' } },
+        y: { title: { display: true, text: 'Calls / hour', font: { size: 12 } },
+              ticks: { font: { size: 11 } }, grid: { color: '#eee' }, beginAtZero: true }
+      }
+    }
+  });
+
+  // Table — with MW (manpower) columns after Today and each past date
+  var _mwSt = 'background:#FFF8E1;color:#E65100;font-weight:700;min-width:42px';
+  var thCells =
+    '<th style="text-align:left;min-width:110px">Hour (IST)</th>'+
+    '<th style="background:#BBDEFB;color:#1565C0;min-width:72px">7D Avg</th>'+
+    '<th style="background:#EDE7F6;color:#4527A0;min-width:80px">'+esc(dLabel)+'</th>'+
+    '<th style="'+_mwSt+'" title="Agents on call ('+esc(dLabel)+')">MW</th>';
+  past.forEach(function(pd){
+    thCells += '<th style="min-width:65px">'+fmtD(pd)+'</th>'+
+               '<th style="'+_mwSt+'" title="Agents on call ('+fmtD(pd)+')">MW</th>';
+  });
+
+  var todayMW = WN_MW[dateStr] || {};
+  var rows = '';
+  WN_H.forEach(function(h) {
+    var tv=T[h], av=A[h]||0;
+    var hl=(h<10?'0':'')+h+':00–'+(h+1<10?'0':'')+(h+1)+':00';
+    var tdT, mwT;
+    if (tv==null) {
+      tdT = '<td class="curr-pending">—</td>';
+      mwT = '<td style="background:#FFF8E1">—</td>';
+    } else {
+      tdT = '<td style="background:#EDE7F6">'+tv.toLocaleString()+'</td>';
+      var mwv = todayMW[String(h)];
+      mwT = '<td style="background:#FFF8E1;color:#E65100;font-weight:600">'+(mwv !== undefined ? mwv : '—')+'</td>';
+    }
+    var pastTDs='';
+    past.forEach(function(pd){
+      var pv=(WN_ALL_T[pd]||{})[String(h)]||0;
+      var pmw=(WN_MW[pd]||{})[String(h)];
+      pastTDs+='<td class="curr-past">'+pv.toLocaleString()+'</td>'+
+               '<td style="background:#FFF8E1;color:#E65100;font-weight:600">'+(pmw !== undefined ? pmw : '—')+'</td>';
+    });
+    rows+='<tr>'+
+          '<td class="curr-hour-cell">'+hl+'</td>'+
+          '<td class="curr-avg-cell">'+Math.round(av).toLocaleString()+'</td>'+
+          tdT+mwT+pastTDs+'</tr>';
+  });
+
+  var totAvg=0, totToday=0, todayHasData=false;
+  var totPast={};
+  past.forEach(function(pd){ totPast[pd]=0; });
+  WN_H.forEach(function(h){
+    var tv=T[h], av=A[h]||0;
+    if (tv!==null && tv!==undefined) { totToday+=tv; totAvg+=av; todayHasData=true; }
+    past.forEach(function(pd){ totPast[pd]+=(WN_ALL_T[pd]||{})[String(h)]||0; });
+  });
+  var totTodayTd=todayHasData
+    ? '<td style="background:#EDE7F6;color:#4527A0;font-weight:700">'+totToday.toLocaleString()+'</td>'
+    : '<td class="curr-pending">—</td>';
+  var totPastTDs='';
+  past.forEach(function(pd){
+    totPastTDs+='<td style="font-weight:700">'+totPast[pd].toLocaleString()+'</td>'+
+                '<td style="background:#FFF8E1"></td>';
+  });
+
+  if (tableEl) tableEl.innerHTML =
+    '<table class="curr-table"><thead><tr>'+thCells+'</tr></thead><tbody>'+rows+
+    '<tr style="background:#f0f4ff;border-top:2px solid #90CAF9;font-weight:700">'+
+    '<td class="curr-hour-cell" style="font-weight:700;color:#4527A0">Total</td>'+
+    '<td class="curr-avg-cell" style="font-weight:700">'+Math.round(totAvg).toLocaleString()+'</td>'+
+    totTodayTd+'<td style="background:#FFF8E1"></td>'+totPastTDs+'</tr></tbody></table>';
+
+  // ── WN Spike Remarks ────────────────────────────────────────────
+  var wnSpikeEl = document.getElementById('wn-spike-wrap');
+  if (!wnSpikeEl) return;
+
+  // Volume-dependent threshold: ≥100 → 15%, 20–99 → 25%, <20 → 100%
+  function spikeOfWN(tv, av) {
+    if (tv == null || av <= 0) return null;
+    var threshold = tv >= 100 ? 15 : tv >= 20 ? 25 : 100;
+    var p = (tv - av) / av * 100;
+    if (p >= threshold * 1.5) return {st:'red',    pct:Math.round(p)};
+    if (p >= threshold)       return {st:'orange', pct:Math.round(p)};
+    return null;
+  }
+
+  var spHoursWN = WN_H.filter(function(h){ return spikeOfWN(T[h], A[h]) !== null; });
+  if (!spHoursWN.length) { wnSpikeEl.innerHTML = ''; return; }
+
+  var MIN_CLS_WN = 5;
+  var wnCards = '';
+  spHoursWN.forEach(function(h) {
+    var tv=T[h]||0, av=A[h]||0;
+    var sp=spikeOfWN(tv,av);
+    var hlbl=(h<10?'0':'')+h+':00–'+(h+1<10?'0':'')+(h+1)+':00';
+    var bcol=sp.st==='red'?'#C62828':'#E65100';
+    var em  =sp.st==='red'?'&#128308;':'&#128992;';
+    var ctH =P.ct?P.ct[String(h)]||{}:{};
+    var acH =P.ac?P.ac[String(h)]||{}:{};
+
+    var allC=new Set([].concat(Object.keys(ctH),Object.keys(acH)));
+    var clsRows=[];
+    allC.forEach(function(c){
+      var tv2=ctH[c]||0, av2=acH[c]||0;
+      if (tv2<MIN_CLS_WN && av2<MIN_CLS_WN) return;
+      var dp=av2>0?(tv2-av2)/av2*100:(tv2>0?100:0);
+      clsRows.push([c,tv2,av2,Math.round(dp)]);
+    });
+    clsRows.sort(function(a,b){ return b[3]-a[3]||b[1]-a[1]; });
+    clsRows=clsRows.slice(0,8);
+    if (!clsRows.length) return;
+
+    var trs='';
+    clsRows.forEach(function(row){
+      var c=row[0],tv2=row[1],av2=row[2],dp=row[3];
+      var ps=(dp>=0?'+':'')+dp+'%', pc;
+      if (dp>=25)       pc='<td style="color:#C62828;font-weight:700">'+ps+' &#8679;</td>';
+      else if (dp>=15)  pc='<td style="color:#E65100;font-weight:600">'+ps+' &#8679;</td>';
+      else if (dp<=-15) pc='<td style="color:#2E7D32">'+ps+' &#8681;</td>';
+      else              pc='<td style="color:#555">'+ps+'</td>';
+      trs+='<tr style="background:#f9f9f9">'+
+           '<td style="font-weight:700;color:#7B1FA2">'+esc(c)+'</td>'+
+           '<td><b>'+tv2.toLocaleString()+'</b></td>'+
+           '<td>'+Math.round(av2)+'</td>'+pc+'</tr>';
+    });
+
+    if (!trs) return;
+    wnCards+='<div class="spike-card">'+
+             '<div class="spike-card-title">'+em+' <b>'+esc(hlbl)+'</b>'+
+             ' &mdash; '+tv.toLocaleString()+' calls vs 7D avg '+Math.round(av).toLocaleString()+
+             ' <span style="color:'+bcol+';font-weight:700"> (+'+sp.pct+'%)</span></div>'+
+             '<table class="spike-disp-table"><thead>'+
+             '<tr><th>Disposition Class</th>'+
+             '<th>'+esc(dLabel)+'</th><th>7D Avg</th><th>vs Avg</th></tr></thead>'+
+             '<tbody>'+trs+'</tbody></table></div>';
+  });
+
+  wnSpikeEl.innerHTML = wnCards ?
+    '<div class="spike-remarks-wrap">'+
+    '<div class="spike-remarks-hdr">&#128269; WN Spike Remarks &mdash; What drove the spike?</div>'+
+    '<div class="spike-cards-row">'+wnCards+'</div></div>' : '';
+}
+
+// Initial render is triggered by activate() once the tab is visible,
+// so the Chart.js canvas has proper dimensions. See activate() below.
+})();
+</script></section>@@MONTH_SECTIONS@@
+<section id="tab-mom" class="tab-panel">
+
+  <h3 style="margin:0 0 8px;font-size:14px;font-weight:600;color:#C62828;">&#128222; Missed Call % &mdash; Month on Month</h3><div id="missChartWrap" class="chart-wrap" style="position:relative;height:240px;width:100%;overflow:hidden;margin-bottom:16px;"><canvas id="missMomChart"></canvas></div><div style="overflow-x:auto;margin-bottom:32px;">@@MISS_TABLE@@</div>
+
+  <div style="margin-top:32px"></div><h3 style="margin:0 0 8px;font-size:14px;font-weight:600;color:#1F3864;">CSAT % &mdash; Month on Month</h3><div id="csatChartWrap" class="chart-wrap" style="position:relative;height:260px;width:100%;overflow:hidden;margin-bottom:16px;"><canvas id="csatMomChart"></canvas></div><div style="overflow-x:auto;">@@CSAT_TABLE@@</div>
+
+  <div class="chart-controls">
+    <label class="filter-label">&#9660; Filter by Disposition Class:</label>
+    <select id="chartClassFilter" onchange="applyChartFilter(this.value)">
+      <option value="">— All Categories —</option>
+      @@CLASS_OPTIONS@@
+    </select>
+    <button class="filter-clear-btn" onclick="document.getElementById('chartClassFilter').value='';applyChartFilter('')">&#10005; Clear</button>
+    <span id="chartFilterNote" class="filter-note" style="display:none"></span>
+
+    <div class="view-toggle-group">
+      <span class="filter-label" style="margin-left:16px;">X-axis:</span>
+      <button class="view-toggle-btn active" id="btnByMonth"
+              onclick="setChartView('month')">By Month</button>
+      <button class="view-toggle-btn" id="btnByCat"
+              onclick="setChartView('category')">By Category</button>
+    </div>
+  </div>
+
+  <div class="chart-wrap" style="position:relative; height:600px; width:100%; overflow:hidden;">
+    <canvas id="momChart"></canvas>
+  </div>
+  @@CAT_TABLE@@
+
+  <div style="margin-top:28px"></div>
+
+  <div class="chart-wrap" style="position:relative; height:600px; width:100%; overflow:hidden;">
+    <canvas id="top10Chart"></canvas>
+  </div>
+  @@CODE_TABLE@@
+
+  <div style="margin-top:32px"></div>
+
+  <!-- Wiom Net Calls vs Plans Sold chart -->
+  <div style="margin-bottom:10px;">
+    <h3 style="margin:0 0 4px;font-size:14px;font-weight:600;color:#1F3864;">Wiom Net Calls vs Plans Sold — Daily</h3>
+    <p style="margin:0;font-size:12px;color:#636e72;">
+      Bars = Plans Sold (left axis) &nbsp;|&nbsp; Line = Wiom Net Calls (right axis)
+      &nbsp;|&nbsp; Filter:
+      <select id="wnMonthFilter" onchange="renderWiomNetChart()" style="font-size:11px;padding:2px 6px;border:1px solid #ddd;border-radius:4px;">
+        <option value="">All Months</option>
+      </select>
+    </p>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;" id="wnKpiRow"></div>
+  <div id="wnChartWrap" style="position:relative;height:360px;width:100%;">
+    <canvas id="wiomNetChart"></canvas>
+  </div>
+
+
+</section>
+
+</main>
+
+<div class="modal-backdrop" id="rawModal">
+  <div class="modal">
+    <header>
+      <h2 id="rawTitle">Raw call records</h2>
+      <div>
+        <button class="download" id="rawDownload">Download CSV</button>
+        <button class="close" id="rawClose">&times;</button>
+      </div>
+    </header>
+    <div class="body">
+      <div class="meta" id="rawMeta"></div>
+      <div id="rawContent"><div class="loading">Loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<footer>Wiom · Inbound Call Dashboard · auto-refreshed hourly 08:00–22:00 IST (incl. same-day live data) · Use "Refresh Now" for instant update</footer>
+
+<script>
+function manualRefresh(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Refreshing...';
+  btn.style.background = '#fff3e0';
+  btn.style.color = '#e65100';
+  fetch('/refresh').then(r => r.json()).then(d => {
+    if (d.status && d.status.startsWith('ERROR')) {
+      btn.textContent = 'Pull failed — check server logs';
+      btn.style.color = '#b71c1c';
+      btn.style.background = '#ffebee';
+      btn.disabled = false;
+      console.error('Refresh error:', d.status);
+    } else {
+      btn.textContent = 'Reloading in 60s...';
+      setTimeout(() => location.reload(), 60000);
+    }
+  }).catch(e => {
+    btn.textContent = 'Error — retry';
+    btn.disabled = false;
+    btn.style.background = '#fff';
+    btn.style.color = '#d32f2f';
+  });
+}
+const PER_TAB_TOTALS  = @@PER_TAB_TOTALS@@;
+const CODES_PER_TAB   = @@CODES_PER_TAB@@;
+const PER_TAB_MISSPCT = @@PER_TAB_MISSPCT@@;
+const PER_TAB_AHT     = @@PER_TAB_AHT@@;
+const PER_TAB_PAYING  = @@PER_TAB_PAYING@@;
+const PER_TAB_ACTIVE  = @@PER_TAB_ACTIVE@@;
+const statTotal      = document.getElementById('stat-total');
+const statTotalLabel = document.getElementById('stat-total-label');
+const statCodes      = document.getElementById('stat-codes');
+const statMiss       = document.getElementById('stat-miss');
+const statMissLabel  = document.getElementById('stat-miss-label');
+const statAht        = document.getElementById('stat-aht');
+const statAhtCard    = statAht.closest('.stat-card');
+const statPaying     = document.getElementById('stat-paying');
+const statActive     = document.getElementById('stat-active');
+
+function fmtNum(n) { return (n || 0).toLocaleString('en-IN'); }
+
+const buttons = document.querySelectorAll('.tab-btn');
+const panels  = document.querySelectorAll('.tab-panel');
+function activate(id) {
+  buttons.forEach(b => b.classList.toggle('active', b.dataset.target === id));
+  panels.forEach (p => p.classList.toggle('active', p.id === id));
+  try { localStorage.setItem('wiom.dash.tab', id); } catch(e) {}
+
+  // ---- per-tab header stats ----
+  if (id === 'tab-current') {
+    statTotalLabel.textContent = 'Total Inbound Calls (Today)';
+    if (statMissLabel) statMissLabel.textContent = 'Missed Call % (Today)';
+    statAhtCard.style.display = 'none';          // hide AHT for Current tab
+  } else {
+    if (statMissLabel) statMissLabel.textContent = 'Missed Call % (MTD)';
+    statAhtCard.style.display = '';              // restore AHT for other tabs
+    if (id === 'tab-mom') {
+      statTotalLabel.textContent = 'Total Inbound Calls (All Months)';
+    } else {
+      const label = document.querySelector('.tab-btn[data-target="' + id + '"]').textContent;
+      statTotalLabel.textContent = 'Total Inbound Calls (' + label + ')';
+    }
+  }
+
+  statTotal.textContent = fmtNum(PER_TAB_TOTALS[id] || 0);
+  if (CODES_PER_TAB[id] !== undefined) statCodes.textContent = CODES_PER_TAB[id];
+  statMiss.textContent = (PER_TAB_MISSPCT[id] !== undefined) ? PER_TAB_MISSPCT[id] + '%' : '-';
+  statAht.textContent  = PER_TAB_AHT[id] || '-';
+  statPaying.textContent = PER_TAB_PAYING[id] !== undefined ? fmtNum(PER_TAB_PAYING[id]) : '-';
+  statActive.textContent = PER_TAB_ACTIVE[id] !== undefined ? fmtNum(PER_TAB_ACTIVE[id]) : '-';
+
+  // toggle highlight bars per tab
+  document.querySelectorAll('.hl-tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.tab === id);
+  });
+  if (id === 'tab-mom') { renderChart(); setTimeout(function(){ renderWiomNetChart(); renderMissMomChart(); renderCsatMomChart(); }, 50); }
+  // Render current tab chart only when tab is visible (canvas needs real dimensions)
+  if (id === 'tab-current' && window.renderCurrent) {
+    var sel = document.getElementById('currDateSel');
+    if (sel) window.renderCurrent(sel.value);
+  }
+}
+buttons.forEach(b => b.addEventListener('click', () => activate(b.dataset.target)));
+const saved = (function(){ try { return localStorage.getItem('wiom.dash.tab'); } catch(e) { return null; } })();
+activate(saved && document.getElementById(saved) ? saved : buttons[0].dataset.target);
+
+// ---------------- raw-data drill-through ----------------
+const modal      = document.getElementById('rawModal');
+const modalTitle = document.getElementById('rawTitle');
+const modalMeta  = document.getElementById('rawMeta');
+const modalBody  = document.getElementById('rawContent');
+const modalDL    = document.getElementById('rawDownload');
+let currentRows = [];
+let currentName = 'raw.csv';
+
+document.getElementById('rawClose').onclick = () => modal.classList.remove('open');
+modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('open'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') modal.classList.remove('open'); });
+
+document.querySelectorAll('table.dash td.num').forEach(td => {
+  if (!td.dataset.scope) return;
+  td.addEventListener('dblclick', () => openDrill(td));
+});
+
+// ---------------- collapsible categories ----------------
+document.querySelectorAll('td[data-toggle]').forEach(td => {
+  td.addEventListener('click', () => {
+    const cls = td.dataset.toggle;
+    const icon = td.querySelector('.toggle-icon');
+    const rows = td.closest('table').querySelectorAll('tr.code-of-' + cls);
+    const isHidden = rows.length && rows[0].classList.contains('hidden');
+    rows.forEach(r => r.classList.toggle('hidden', !isHidden));
+    if (icon) icon.classList.toggle('collapsed', !isHidden);
+  });
+});
+
+// ---------------- search / filter ----------------
+const searchInput = document.getElementById('searchInput');
+searchInput.addEventListener('input', () => {
+  const q = searchInput.value.trim().toLowerCase();
+  document.querySelectorAll('.tab-panel.active table.dash tbody tr').forEach(tr => {
+    if (tr.classList.contains('row-total')) return;
+    const label = (tr.querySelector('td.disp') || {}).textContent || '';
+    if (!q) {
+      tr.classList.remove('search-miss');
+    } else {
+      tr.classList.toggle('search-miss', !label.toLowerCase().includes(q));
+    }
+  });
+});
+// clear search on tab switch
+buttons.forEach(b => b.addEventListener('click', () => {
+  searchInput.value = '';
+  document.querySelectorAll('tr.search-miss').forEach(r => r.classList.remove('search-miss'));
+}));
+
+function openDrill(td) {
+  const p = new URLSearchParams({
+    cls:   td.dataset.cls,
+    code:  td.dataset.code || '',
+    scope: td.dataset.scope,
+    date:  td.dataset.date || '',
+    ym:    td.dataset.ym   || '',
+  });
+  modal.classList.add('open');
+  modalBody.innerHTML = '<div class="loading">Loading raw records from Metabase…</div>';
+  modalDL.style.display = 'none';
+  currentRows = [];
+
+  const scopeLabel = (td.dataset.scope === 'day') ? ('Day: ' + td.dataset.date)
+                    : (td.dataset.scope === 'mtd') ? ('Month: ' + td.dataset.ym + ' (MTD)')
+                    : ('Previous month: ' + td.dataset.ym);
+  const descriptor = td.dataset.cls + (td.dataset.code ? ' › ' + td.dataset.code : '');
+  modalTitle.textContent = descriptor;
+  modalMeta.textContent  = scopeLabel;
+  currentName = ('raw_' + descriptor + '_' + (td.dataset.date || td.dataset.ym) + '.csv')
+                .replace(/[^A-Za-z0-9._-]+/g, '_');
+
+  fetch('/raw?' + p.toString())
+    .then(r => r.json())
+    .then(j => {
+      if (j.error) {
+        modalBody.innerHTML = '<div class="error">' + j.error + '</div>';
+        return;
+      }
+      currentRows = j.rows || [];
+      const cols = j.cols || [];
+      modalMeta.textContent = scopeLabel + '   ·   ' + currentRows.length + ' records';
+      if (currentRows.length === 0) {
+        modalBody.innerHTML = '<div class="loading">No records for this selection.</div>';
+        return;
+      }
+      let html = '<table><thead><tr>' + cols.map(c => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>';
+      currentRows.slice(0, 500).forEach(row => {
+        html += '<tr>' + row.map(v => '<td>' + (v == null ? '' : String(v).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'})[c])) + '</td>').join('') + '</tr>';
+      });
+      html += '</tbody></table>';
+      if (currentRows.length > 500) {
+        html += '<div class="meta" style="margin-top:8px">Showing first 500 of ' + currentRows.length + ' rows. Use Download CSV for the full set.</div>';
+      }
+      modalBody.innerHTML = html;
+      modalDL.style.display = '';
+      modalDL.onclick = () => {
+        const csv = [cols.join(',')].concat(
+          currentRows.map(r => r.map(v => {
+            const s = v == null ? '' : String(v);
+            return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+          }).join(','))
+        ).join('\n');
+        const blob = new Blob([csv], {type: 'text/csv'});
+        const url  = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = currentName; a.click();
+        URL.revokeObjectURL(url);
+      };
+    })
+    .catch(err => {
+      modalBody.innerHTML = '<div class="error">Failed to load raw data: ' + err + '<br><br>'
+        + 'Drill-through requires the custom Python server (scripts\\serve_dashboard.bat). '
+        + 'If you opened the file directly, start the server first.</div>';
+    });
+}
+
+// ---- Wiom Net Calls vs Plans Sold ----
+const WIOM_NET_PLANS = @@WIOM_NET_PLANS@@;
+
+function _initWnFilter() {
+  const sel = document.getElementById('wnMonthFilter');
+  if (!sel) return;
+  const months = [...new Set(WIOM_NET_PLANS.map(r => r.date.slice(0,7)))];
+  months.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m; opt.textContent = m;
+    sel.appendChild(opt);
+  });
+  if (months.length) sel.value = months[months.length - 1];
+  // Re-render if MoM tab already active (e.g. restored from localStorage)
+  if (document.getElementById('tab-mom') && document.getElementById('tab-mom').classList.contains('active')) {
+    setTimeout(function(){ renderWiomNetChart(); renderMissMomChart(); renderCsatMomChart(); }, 50);
+  }
+}
+document.addEventListener('DOMContentLoaded', _initWnFilter);
+
+let _wnChart = null;
+function _noDataOverlay(wrapperId, msg) {
+  const w = document.getElementById(wrapperId);
+  if (!w) return;
+  const existing = w.querySelector('.no-data-overlay');
+  if (existing) return;
+  const div = document.createElement('div');
+  div.className = 'no-data-overlay';
+  div.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#888;font-size:13px;';
+  div.textContent = msg;
+  w.style.position = 'relative';
+  w.appendChild(div);
+}
+function renderWiomNetChart() {
+  const sel = document.getElementById('wnMonthFilter');
+  const filter = sel ? sel.value : '';
+  const rows = filter ? WIOM_NET_PLANS.filter(r => r.date.startsWith(filter)) : WIOM_NET_PLANS;
+  if (!rows.length) {
+    _noDataOverlay('wnChartWrap', 'Data is loading — refreshes automatically every hour.');
+    return;
+  }
+
+  const labels    = rows.map(r => r.date.slice(5));   // "MM-DD"
+  const plans     = rows.map(r => r.plans_sold);
+  const wnCalls   = rows.map(r => r.wiom_net_calls);
+
+  const avgPlans  = Math.round(plans.reduce((a,b)=>a+b,0)/plans.length);
+  const avgCalls  = Math.round(wnCalls.reduce((a,b)=>a+b,0)/wnCalls.length);
+  const peakIdx   = wnCalls.reduce((bi,v,i,a)=>v>a[bi]?i:bi, 0);
+  const ratio     = (avgCalls / avgPlans * 1000).toFixed(1);
+
+  // KPI tiles
+  const kpiRow = document.getElementById('wnKpiRow');
+  if (kpiRow) {
+    kpiRow.innerHTML = [
+      ['Avg Daily Plans Sold', avgPlans.toLocaleString(), '#c8860a'],
+      ['Avg Wiom Net Calls/day', avgCalls, '#1F3864'],
+      ['Peak Day', rows[peakIdx].date.slice(5)+' ('+wnCalls[peakIdx]+')', '#b71c1c'],
+      ['Calls per 1,000 Plans', ratio, '#333'],
+    ].map(([k,v,c]) => `<div style="background:#f8f9fa;border-radius:8px;padding:10px 12px;border:0.5px solid #dee2e6;">
+      <p style="font-size:10px;color:#636e72;margin:0 0 3px;">${k}</p>
+      <p style="font-size:18px;font-weight:500;margin:0;color:${c};">${v}</p>
+    </div>`).join('');
+  }
+
+  const ctx = document.getElementById('wiomNetChart').getContext('2d');
+  if (_wnChart) _wnChart.destroy();
+  _wnChart = new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Plans Sold',
+          data: plans,
+          backgroundColor: 'rgba(255,183,77,0.55)',
+          borderColor: 'rgba(255,183,77,0.8)',
+          borderWidth: 1,
+          yAxisID: 'yPlans',
+          order: 2,
+        },
+        {
+          type: 'line',
+          label: 'Wiom Net Calls',
+          data: wnCalls,
+          borderColor: '#1F3864',
+          backgroundColor: 'rgba(31,56,100,0.08)',
+          borderWidth: 2.5,
+          pointRadius: 4,
+          pointBackgroundColor: '#1F3864',
+          tension: 0.3,
+          yAxisID: 'yCalls',
+          order: 1,
+        },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 11 } } },
+        tooltip: { callbacks: { title: t => rows[t[0].dataIndex].date } },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, maxRotation: 45 } },
+        yPlans: {
+          type: 'linear', position: 'left',
+          title: { display: true, text: 'Plans Sold', color: '#c8860a', font: { size: 11 } },
+          ticks: { color: '#c8860a', font: { size: 10 } },
+          grid: { color: 'rgba(200,134,10,0.08)' },
+        },
+        yCalls: {
+          type: 'linear', position: 'right',
+          title: { display: true, text: 'Wiom Net Calls', color: '#1F3864', font: { size: 11 } },
+          ticks: { color: '#1F3864', font: { size: 10 } },
+          grid: { drawOnChartArea: false },
+        },
+      },
+    },
+  });
+}
+
+// ---- MoM TREND charts — supports two X-axis views ----
+const MOM_MONTH_LABELS  = @@MOM_LABELS@@;   // ["Feb 2026","Mar 2026",…]
+const MOM_CAT_SERIES    = @@CAT_SERIES@@;     // {cls:[avg_feb,avg_mar,…]}
+const MOM_CAT_COLORS    = @@CAT_COLORS@@;     // {cls:"#hex"}
+const TOP15_CODE_SERIES = @@CODE_SERIES@@;  // {code:[avg_feb,…]}
+const TOP15_CODE_COLORS = @@CODE_COLORS@@;  // {code:"#hex"}
+const CODE_CLASS_MAP    = @@CODE_MAP@@;  // {code:cls}
+const MONTH_COLORS      = ['#E91E8C','#1E88E5','#43A047','#FB8C00','#8E24AA','#00897B'];
+
+let chartInstance      = null;
+let top10ChartInstance = null;
+let _activeFilter      = '';
+let _chartView         = 'month';   // 'month' | 'category'
+
+// ── dataset builders ──────────────────────────────────────────────
+
+/* VIEW = month : x = months, one line per category */
+function buildByMonth_Cat(filter) {
+  const keys = filter
+    ? Object.keys(MOM_CAT_SERIES).filter(c => c === filter)
+    : Object.keys(MOM_CAT_SERIES);
+  return keys.map(cls => {
+    const col = MOM_CAT_COLORS[cls] || '#888';
+    return { label: cls, data: MOM_CAT_SERIES[cls],
+      borderColor: col, backgroundColor: col+'20',
+      borderWidth: 3, tension: 0.3,
+      pointRadius: 8, pointHoverRadius: 11, pointBorderWidth: 2.5,
+      pointBackgroundColor: '#fff', pointBorderColor: col, fill: false };
+  });
+}
+function buildByMonth_Code(filter) {
+  const keys = filter
+    ? Object.keys(TOP15_CODE_SERIES).filter(c => CODE_CLASS_MAP[c] === filter)
+    : Object.keys(TOP15_CODE_SERIES);
+  return keys.map(code => {
+    const col = TOP15_CODE_COLORS[code] || '#888';
+    return { label: code, data: TOP15_CODE_SERIES[code],
+      borderColor: col, backgroundColor: col+'20',
+      borderWidth: 3, tension: 0.3,
+      pointRadius: 8, pointHoverRadius: 11, pointBorderWidth: 2.5,
+      pointBackgroundColor: '#fff', pointBorderColor: col, fill: false };
+  });
+}
+
+/* VIEW = category : x = categories, one line per month */
+function buildByCat_Cat(filter) {
+  const cats = filter
+    ? Object.keys(MOM_CAT_SERIES).filter(c => c === filter)
+    : Object.keys(MOM_CAT_SERIES);
+  return MOM_MONTH_LABELS.map((month, mi) => {
+    const col = MONTH_COLORS[mi % MONTH_COLORS.length];
+    return { label: month,
+      data: cats.map(cls => MOM_CAT_SERIES[cls] ? MOM_CAT_SERIES[cls][mi] : 0),
+      borderColor: col, backgroundColor: col+'20',
+      borderWidth: 3, tension: 0.3,
+      pointRadius: 8, pointHoverRadius: 11, pointBorderWidth: 2.5,
+      pointBackgroundColor: '#fff', pointBorderColor: col, fill: false };
+  });
+}
+function buildByCat_Code(filter) {
+  const codes = filter
+    ? Object.keys(TOP15_CODE_SERIES).filter(c => CODE_CLASS_MAP[c] === filter)
+    : Object.keys(TOP15_CODE_SERIES);
+  return MOM_MONTH_LABELS.map((month, mi) => {
+    const col = MONTH_COLORS[mi % MONTH_COLORS.length];
+    return { label: month,
+      data: codes.map(code => TOP15_CODE_SERIES[code] ? TOP15_CODE_SERIES[code][mi] : 0),
+      borderColor: col, backgroundColor: col+'20',
+      borderWidth: 3, tension: 0.3,
+      pointRadius: 8, pointHoverRadius: 11, pointBorderWidth: 2.5,
+      pointBackgroundColor: '#fff', pointBorderColor: col, fill: false };
+  });
+}
+
+// ── helpers that pick the right builder ──────────────────────────
+function getLabels(view, filter, isCode) {
+  if (view === 'month') return MOM_MONTH_LABELS;
+  const series = isCode ? TOP15_CODE_SERIES : MOM_CAT_SERIES;
+  const all = Object.keys(series);
+  if (!filter) return all;
+  return isCode
+    ? all.filter(c => CODE_CLASS_MAP[c] === filter)
+    : all.filter(c => c === filter);
+}
+function getDatasets(view, filter, isCode) {
+  if (view === 'month') return isCode ? buildByMonth_Code(filter) : buildByMonth_Cat(filter);
+  return isCode ? buildByCat_Code(filter) : buildByCat_Cat(filter);
+}
+
+// ── Chart.js options ─────────────────────────────────────────────
+function trendOpts(titleText, view, filter, isCode) {
+  const xLabels   = getLabels(view, filter, isCode);
+  const manyX     = xLabels.length > 5;
+  const fewSeries = (view === 'month' && !!filter) || (view === 'category');
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    devicePixelRatio: window.devicePixelRatio || 2,
+    animation: { duration: 300 },
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      title: {
+        display: true, text: titleText,
+        font: { size: 15, weight: 'bold' }, color: '#111',
+        padding: { bottom: 18 }
+      },
+      legend: {
+        position: fewSeries ? 'top' : 'bottom',
+        labels: { boxWidth: 14, padding: 14, font: { size: 12 }, color: '#222' }
+      },
+      tooltip: {
+        titleFont: { size: 13, weight: 'bold' },
+        bodyFont:  { size: 12 }, padding: 10,
+        callbacks: {
+          label: ctx => '  ' + ctx.dataset.label + ': ' + Math.round(ctx.parsed.y)
+        }
+      }
+    },
+    scales: {
+      x: {
+        ticks: {
+          autoSkip: false,
+          maxRotation: manyX ? 40 : 0, minRotation: manyX ? 30 : 0,
+          font: { size: manyX ? 11 : 14, weight: '700' }, color: '#222'
+        },
+        grid: { color: '#e6e6e6' }
+      },
+      y: {
+        title: { display: true, text: 'Avg calls / day',
+                  font: { size: 13 }, color: '#555' },
+        ticks: { font: { size: 12 }, color: '#444' },
+        grid:  { color: '#e6e6e6' },
+        beginAtZero: true
+      }
+    }
+  };
+}
+
+// ── chart create / update ─────────────────────────────────────────
+function _makeChart(canvasId, view, filter, isCode, title) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  return new Chart(ctx, {
+    type: 'line',
+    data: { labels: getLabels(view, filter, isCode),
+             datasets: getDatasets(view, filter, isCode) },
+    options: trendOpts(title, view, filter, isCode)
+  });
+}
+function _updateChart(inst, view, filter, isCode, title) {
+  inst.data.labels   = getLabels(view, filter, isCode);
+  inst.data.datasets = getDatasets(view, filter, isCode);
+  Object.assign(inst.options, trendOpts(title, view, filter, isCode));
+  inst.update();
+}
+
+const CAT_TITLE  = 'M.o.M Avg Daily Inbound Calls — Category Wise';
+const CODE_TITLE = 'M.o.M Avg Daily Inbound Calls — Top 15 Sub-categories';
+
+function renderChart() {
+  setTimeout(function() {
+    if (!chartInstance) {
+      chartInstance = _makeChart('momChart', _chartView, _activeFilter, false, CAT_TITLE);
+    } else {
+      _updateChart(chartInstance, _chartView, _activeFilter, false, CAT_TITLE);
+    }
+    if (!top10ChartInstance) {
+      top10ChartInstance = _makeChart('top10Chart', _chartView, _activeFilter, true, CODE_TITLE);
+    } else {
+      _updateChart(top10ChartInstance, _chartView, _activeFilter, true, CODE_TITLE);
+    }
+  }, 80);
+}
+
+function applyChartFilter(cls) {
+  _activeFilter = cls || '';
+  const note = document.getElementById('chartFilterNote');
+  note.textContent = _activeFilter ? 'Filtered: ' + _activeFilter : '';
+  note.style.display = _activeFilter ? '' : 'none';
+  if (!chartInstance) { renderChart(); return; }
+  _updateChart(chartInstance,     _chartView, _activeFilter, false, CAT_TITLE);
+  _updateChart(top10ChartInstance,_chartView, _activeFilter, true,  CODE_TITLE);
+}
+
+function setChartView(view) {
+  _chartView = view;
+  document.getElementById('btnByMonth').classList.toggle('active', view === 'month');
+  document.getElementById('btnByCat').classList.toggle('active', view === 'category');
+  if (!chartInstance) { renderChart(); return; }
+  _updateChart(chartInstance,     _chartView, _activeFilter, false, CAT_TITLE);
+  _updateChart(top10ChartInstance,_chartView, _activeFilter, true,  CODE_TITLE);
+}
+
+// ---- Missed Call % Month-on-Month chart ----
+const MISS_MOM = {
+  labels: @@MOM_LABELS@@,
+  svc:    @@SVC_MISS@@,
+  wn:     @@WN_MISS@@
+};
+let _missChart = null;
+function renderMissMomChart() {
+  const canvas = document.getElementById('missMomChart');
+  if (!canvas) return;
+  if (!MISS_MOM.labels.length) {
+    _noDataOverlay('missChartWrap', 'Data is loading — refreshes automatically every hour.');
+    return;
+  }
+  if (_missChart) { _missChart.destroy(); _missChart = null; }
+  const maxMiss = Math.max(...MISS_MOM.svc.filter(v=>v!=null), ...MISS_MOM.wn.filter(v=>v!=null), 1);
+  _missChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: MISS_MOM.labels,
+      datasets: [
+        {
+          label: 'Service Queue Missed %',
+          data: MISS_MOM.svc,
+          borderColor: '#C62828',
+          backgroundColor: 'rgba(198,40,40,0.08)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0.3,
+          spanGaps: true,
+        },
+        {
+          label: 'Wiom Net Queue Missed %',
+          data: MISS_MOM.wn,
+          borderColor: '#E91E8C',
+          backgroundColor: 'rgba(233,30,140,0.08)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0.3,
+          spanGaps: false,
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.parsed.y != null ? ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + '%' : null
+          }
+        }
+      },
+      scales: {
+        y: {
+          min: 0,
+          max: Math.ceil(Math.max(maxMiss * 1.3, 5)),
+          ticks: { callback: v => v + '%', font: { size: 11 } },
+          grid: { color: 'rgba(0,0,0,0.06)' }
+        },
+        x: { ticks: { font: { size: 11 } }, grid: { display: false } }
+      }
+    }
+  });
+}
+
+// ---- CSAT Month-on-Month chart ----
+const CSAT_MOM = {
+  labels: @@MOM_LABELS@@,
+  svc:    @@SVC_CSAT@@,
+  wn:     @@WN_CSAT@@
+};
+let _csatChart = null;
+function renderCsatMomChart() {
+  const canvas = document.getElementById('csatMomChart');
+  if (!canvas) return;
+  if (!CSAT_MOM.labels.length) {
+    _noDataOverlay('csatChartWrap', 'Data is loading — refreshes automatically every hour.');
+    return;
+  }
+  if (_csatChart) { _csatChart.destroy(); _csatChart = null; }
+  _csatChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: CSAT_MOM.labels,
+      datasets: [
+        {
+          label: 'Service Queue CSAT %',
+          data: CSAT_MOM.svc,
+          borderColor: '#1F3864',
+          backgroundColor: 'rgba(31,56,100,0.08)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0.3,
+          spanGaps: true,
+        },
+        {
+          label: 'Wiom Net Queue CSAT %',
+          data: CSAT_MOM.wn,
+          borderColor: '#e91e8c',
+          backgroundColor: 'rgba(233,30,140,0.08)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0.3,
+          spanGaps: false,
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.parsed.y != null ? ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + '%' : null
+          }
+        }
+      },
+      scales: {
+        y: {
+          min: 60,
+          max: 90,
+          ticks: { callback: v => v + '%', font: { size: 11 } },
+          grid: { color: 'rgba(0,0,0,0.06)' }
+        },
+        x: { ticks: { font: { size: 11 } }, grid: { display: false } }
+      }
+    }
+  });
+}
+</script>
+</body>
+</html>

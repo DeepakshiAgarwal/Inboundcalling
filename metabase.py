@@ -1,4 +1,5 @@
 """Settings and a small Metabase client (standard library only)."""
+import http.client
 import json
 import os
 import time
@@ -34,7 +35,24 @@ def configured():
     return bool(env("METABASE_URL") and env("METABASE_DATABASE_ID") and get_metabase_key())
 
 
-def query(sql, params=None, timeout=300):
+def fetch(req, timeout, waits=(5, 20, 60)):
+    """Send a read-only request; retry when the connection drops, times out or Metabase is busy."""
+    for wait in (*waits, None):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            problem = f"Metabase returned HTTP {e.code}"
+            if e.code < 500 and e.code != 429:
+                raise RuntimeError(problem) from None      # wrong key, bad query: retrying will not help
+        except (OSError, http.client.HTTPException, ValueError) as e:
+            problem = f"Could not reach Metabase: {getattr(e, 'reason', e)}"
+        if wait is None:
+            raise RuntimeError(problem)
+        time.sleep(wait)
+
+
+def query(sql, params=None, timeout=120):
     """Run a native query and return a list of dicts with UPPER-CASE keys.
 
     Uses the JSON export endpoint because /api/dataset stops at 2000 rows.
@@ -53,13 +71,7 @@ def query(sql, params=None, timeout=300):
     body = urllib.parse.urlencode({"query": json.dumps(q), "format_rows": "false"}).encode()
     req = urllib.request.Request(env("METABASE_URL").rstrip("/") + "/api/dataset/json", data=body, headers={
         "x-api-key": get_metabase_key(), "Content-Type": "application/x-www-form-urlencoded"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            data = json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Metabase returned HTTP {e.code}") from None
-    except urllib.error.URLError as e:
-        raise RuntimeError(f"Could not reach Metabase: {e.reason}") from None
+    data = fetch(req, timeout)
     if isinstance(data, dict):                                   # errors come back as an object
         raise RuntimeError(f"Metabase query failed: {data.get('error') or data.get('message') or 'unknown error'}")
     return [{k.upper(): v for k, v in row.items()} for row in data]

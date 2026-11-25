@@ -85,10 +85,13 @@ def do_refresh(full=False):
 
 
 def background_refresh():
+    """True when the data is fresh (or another refresh is already running)."""
     try:
         do_refresh()
+        return True
     except Exception as e:
         log("refresh failed:", e)
+        return False
 
 
 def scheduler():
@@ -98,9 +101,11 @@ def scheduler():
         now = dt.datetime.now(pipeline.IST)
         hour = (now.date(), now.hour)
         if hour != last:
-            last = hour
-            if now.hour in REFRESH_HOURS or not STORE.exists():
-                background_refresh()
+            due = now.hour in REFRESH_HOURS or not STORE.exists()
+            if not due or background_refresh():
+                last = hour
+            else:
+                time.sleep(270)             # failed: try again in about five minutes
         time.sleep(30)
 
 

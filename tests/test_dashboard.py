@@ -79,6 +79,22 @@ class Tests(unittest.TestCase):
         s = p.refresh(SNAP, now=NOW + dt.timedelta(days=7), query=lambda q, params=None: [])
         self.assertIn('data-target="tab-2026-12">Dec 2026', render(s))
 
+    def test_fetch_retries_dropped_connections_only(self):
+        import io
+        import urllib.error
+        import metabase
+        from unittest import mock
+
+        ok = mock.MagicMock()
+        ok.__enter__.return_value = io.BytesIO(b"[]")
+        with mock.patch("urllib.request.urlopen", side_effect=[ConnectionResetError(), TimeoutError(), ok]), \
+                mock.patch("time.sleep"):
+            self.assertEqual(metabase.fetch("req", 1), [])
+        denied = urllib.error.HTTPError("u", 401, "no", {}, io.BytesIO())
+        with mock.patch("urllib.request.urlopen", side_effect=denied) as m, self.assertRaises(RuntimeError):
+            metabase.fetch("req", 1)
+        self.assertEqual(m.call_count, 1)
+
     def test_spike_thresholds(self):
         for v, ref, hit in ((115, 100, True), (114, 100, False), (25, 20, True), (24, 20, False),
                             (10, 5, True), (9, 5, False), (5, 0, False)):

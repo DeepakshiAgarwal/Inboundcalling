@@ -8,6 +8,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
+import callback
 import metabase
 from logic import FLAT_CLASSES, HOURLY_DAYS, HOURS, SALES_QUEUE_CLASSES, WN_HOURS, add_days
 
@@ -178,11 +179,19 @@ def refresh(store, now=None, full=False, query=None):
     for r in query(sql_manpower(hlo, today)):
         s["wn_mw"].setdefault(r["D"], {})[str(int(r["H"]))] = int(r["N"])
 
+    # Callback Calls tab
+    old = s.get("callback") or {}
+    clo = max(callback.START, first) if full or not old else lo
+    fresh = callback.from_rows(query(callback.sql_daily(TABLE, clo, today, TALK, HANDLE)),
+                               query(callback.sql_hours(TABLE, clo, today)),
+                               query(callback.sql_cats(TABLE, clo, today)), roll_up)
+    s["callback"] = {d: v for d, v in old.items() if d < clo} | fresh
+
     # optional sources: kept as they are until a query file is supplied
     rows = optional("isd_hourly", max(lo, hlo), today)
     if rows is not None:
         s["isd"].update(isd_from(r for r in rows if int(r["H"]) in HOURS))
-    rows = optional("csat_daily", max(first, CSAT_START), today)              # D, QG, POSITIVE, TOTAL
+    rows = optional("csat_daily", max(lo[:7] + "-01", CSAT_START), today)              # D, QG, POSITIVE, TOTAL
     if rows is not None:
         pos, tot = Counter(), Counter()
         for r in rows:
@@ -197,14 +206,15 @@ def refresh(store, now=None, full=False, query=None):
     rows = optional("devices_monthly", recent, today)         # YM, PAYING, ACTIVE
     for r in rows or []:
         s["months"][r["YM"]] = {**s["months"].get(r["YM"], {}), "paying": int(r["PAYING"]), "active": int(r["ACTIVE"])}
-    rows = optional("plans_daily", first, today)             # D, PLANS_SOLD
+    rows = optional("plans_daily", lo, today)             # D, PLANS_SOLD
     if rows is not None:
         calls = {p["date"]: p["wiom_net_calls"] for p in s["plans"]}
         calls.update({d: v["repeat_den"] for d, v in s["wn"].items() if v.get("repeat_den")})
         start = s["plans"][0]["date"] if s["plans"] else first
         rows = [r for r in rows if r["D"] >= start]
-        s["plans"] = [{"date": r["D"], "plans_sold": int(r["PLANS_SOLD"]), "wiom_net_calls": calls.get(r["D"], 0)}
-                      for r in sorted(rows, key=lambda r: r["D"]) if start <= r["D"] < today]
+        sold = {p["date"]: p["plans_sold"] for p in s["plans"]} | {r["D"]: int(r["PLANS_SOLD"]) for r in rows}
+        s["plans"] = [{"date": d, "plans_sold": n, "wiom_net_calls": calls.get(d, 0)}
+                      for d, n in sorted(sold.items()) if d < today]
 
     s["today"], s["now_hour"] = today, now.hour
     s["as_of"] = now.strftime("%Y-%m-%d %H:%M") + " IST"

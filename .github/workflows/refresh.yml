@@ -2,10 +2,10 @@ name: Refresh inbound dashboard
 
 on:
   schedule:
-    # Every 20 minutes, 08:00-22:40 IST (02:30-17:10 UTC). GitHub can start scheduled runs late or skip some.
-    - cron: "30,50 2 * * *"
-    - cron: "10,30,50 3-16 * * *"
-    - cron: "10 17 * * *"
+    # Twice an hour, 08:07-22:37 IST. GitHub can start scheduled runs late or skip some.
+    - cron: "37 2 * * *"
+    - cron: "7,37 3-16 * * *"
+    - cron: "7 17 * * *"
   workflow_dispatch:        # "Run workflow" button
   push:
     branches: [main]
@@ -35,6 +35,13 @@ jobs:
 
       - name: Tests
         run: python tests/test_dashboard.py
+
+      - name: Data saved by the last run (aggregates only)
+        uses: actions/cache@v4
+        with:
+          path: data/store.json
+          key: store-v2-${{ github.run_id }}
+          restore-keys: store-v2-
 
       - name: Pull from Metabase and build
         env:

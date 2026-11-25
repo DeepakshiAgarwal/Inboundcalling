@@ -12,6 +12,7 @@ Python standard library only; nothing to install.
 | File | What it does |
 |---|---|
 | `logic.py` | Every calculation: averages, spikes, 7-day averages, MoM, highlights |
+| `callback.py` | Callback Calls tab: auto-dialled campaign `wiom_talktime_threshold_outbound`, from July 2026 |
 | `render.py`, `templates/page.html` | The page |
 | `pipeline.py` | SQL and the refresh; also the drill-through query |
 | `metabase.py` | Settings (`.env`) and the Metabase client |
@@ -22,7 +23,7 @@ Python standard library only; nothing to install.
 
 ## GitHub Pages (shared version)
 
-`.github/workflows/refresh.yml` pulls from Metabase every 20 minutes, 08:00-22:40 IST, builds the page with
+`.github/workflows/refresh.yml` pulls from Metabase twice an hour, 08:07-22:37 IST (the last 3 days; saved data for the rest), builds the page with
 `build_static.py` and publishes it. Nothing is committed on a refresh. Open pages reload themselves.
 
 - Secret (Settings -> Secrets and variables -> Actions): `METABASE_API_KEY`

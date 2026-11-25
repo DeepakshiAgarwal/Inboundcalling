@@ -1,6 +1,7 @@
 """Builds the GitHub Pages version into site/ (aggregates only: no drill-through, no phone numbers).
 
-    python build_static.py            pull everything from Metabase, then build
+    python build_static.py            pull the last days from Metabase (all history the first time), then build
+    python build_static.py --full     re-read all history
     python build_static.py --saved    build from the saved data, no Metabase
 """
 import datetime as dt
@@ -60,13 +61,16 @@ def to_static(page, version):
 
 
 def main():
-    store = json.loads((ROOT / "data" / "snapshot.json").read_text(encoding="utf-8"))
+    saved = ROOT / "data" / "store.json"
+    first_time = not saved.exists()
+    store = json.loads((ROOT / "data" / "snapshot.json" if first_time else saved).read_text(encoding="utf-8"))
     if "--saved" not in sys.argv:
-        store = pipeline.refresh(store, full=True)
+        store = pipeline.refresh(store, full=first_time or "--full" in sys.argv)
         yesterday = add_days(store["today"], -1)
         if not (store["svc"].get(yesterday) or {}).get("vol"):
             raise SystemExit(f"No Service calls found for {yesterday}; keeping the published page")
     page = to_static(render(store), store["as_of"])
+    saved.write_text(json.dumps(store, separators=(",", ":")), encoding="utf-8")
     SITE.mkdir(exist_ok=True)
     (SITE / "index.html").write_text(page, encoding="utf-8", newline="\n")
     (SITE / "version.txt").write_text(store["as_of"], encoding="utf-8")

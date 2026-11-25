@@ -268,7 +268,7 @@ class Model:
         miss["tab-current"] = round(self.metric("svc", "missed", [self.today]), 1)
         aht["tab-current"] = ""
         for d in (paying, active):
-            d["tab-mom"] = d["tab-current"] = d[last]
+            d["tab-mom"] = d["tab-current"] = d["tab-callback"] = d[last]
         drop_none = lambda d: {k: v for k, v in d.items() if v is not None}
         return totals, codes, miss, aht, drop_none(paying), drop_none(active)
 

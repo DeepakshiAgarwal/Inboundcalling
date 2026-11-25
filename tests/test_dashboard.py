@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
+import callback  # noqa: E402
 import pipeline as p  # noqa: E402
 p.optional = lambda *a: None          # sql/ files are only run live
 from logic import Model, spike_pct  # noqa: E402
@@ -20,6 +21,8 @@ NOW = dt.datetime(2026, 11, 25, 9, 15, tzinfo=p.IST)
 def fake_query(sql, params=None):
     """Answers each pipeline query with the rows Snowflake would return for the snapshot."""
     import re
+    if "/* callback" in sql:
+        return []
     lo, hi = re.findall(r"CALL_TIME::DATE [<>]= DATE '([\d-]+)'", sql)[-2:]
     days = [d for d in SNAP["facts"] if lo <= d <= hi]
     if "AS REP" in sql:
@@ -79,6 +82,25 @@ class Tests(unittest.TestCase):
         s = p.refresh(SNAP, now=NOW + dt.timedelta(days=7), query=lambda q, params=None: [])
         self.assertIn('data-target="tab-2026-12">Dec 2026', render(s))
 
+    def test_callback_tab(self):
+        daily = [{"D": d, "DIALS": 100, "CUSTOMERS": 40, "CONNECTED": c, "REACHED": c, "NO_ANSWER": 70, "HANGUP": 5,
+                  "AGENTS": 3, "AHT": 120.9} for d, c in (("2026-10-30", 10), ("2026-11-23", 20), ("2026-11-24", 30),
+                                                          ("2026-11-25", 1))]
+        hours = [{"D": r["D"], "H": 9, "N": 100, "C": r["CONNECTED"]} for r in daily]
+        cats = [{"D": r["D"], "CLS": "Refund", "CODE": "Service Issue", "N": r["CONNECTED"]} for r in daily]
+        data = callback.from_rows(daily, hours, cats, p.roll_up)
+        cb = callback.Callback({"callback": data, "today": "2026-11-25"})
+        nov = cb.days_of("2026-11")
+        self.assertEqual(nov, ["2026-11-23", "2026-11-24"])                 # today is left out of averages
+        self.assertEqual(cb.metric("connected", nov), 25)
+        self.assertEqual(cb.metric("connect_pct", nov), 25.0)
+        self.assertEqual(cb.metric("attempts", nov), 2.5)
+        self.assertEqual(data["2026-11-24"]["hours"], {"9": [100, 30]})
+        page = render({**SNAP, "callback": data})
+        self.assertIn('data-target="tab-callback">Callback Calls', page)
+        self.assertIn("(+150%)", page)                                      # Nov 25/day vs Oct 10/day
+        self.assertIn("No callback data yet", render(SNAP))
+
     def test_fetch_retries_dropped_connections_only(self):
         import io
         import urllib.error
@@ -87,10 +109,14 @@ class Tests(unittest.TestCase):
 
         ok = mock.MagicMock()
         ok.__enter__.return_value = io.BytesIO(b"[]")
-        with mock.patch("urllib.request.urlopen", side_effect=[ConnectionResetError(), TimeoutError(), ok]), \
+        with mock.patch("urllib.request.urlopen", side_effect=[ConnectionResetError(), ConnectionResetError(), ok]), \
                 mock.patch("time.sleep"):
             self.assertEqual(metabase.fetch("req", 1), [])
+        with mock.patch("urllib.request.urlopen", side_effect=TimeoutError()) as m, self.assertRaises(RuntimeError):
+            metabase.fetch("req", 1)
+        self.assertEqual(m.call_count, 1)                   # a slow query is never sent twice
         denied = urllib.error.HTTPError("u", 401, "no", {}, io.BytesIO())
+        self.addCleanup(denied.close)
         with mock.patch("urllib.request.urlopen", side_effect=denied) as m, self.assertRaises(RuntimeError):
             metabase.fetch("req", 1)
         self.assertEqual(m.call_count, 1)

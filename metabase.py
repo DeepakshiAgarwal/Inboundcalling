@@ -36,7 +36,9 @@ def configured():
 
 
 def fetch(req, timeout, waits=(5, 20, 60)):
-    """Send a read-only request; retry when the connection drops, times out or Metabase is busy."""
+    """Send a read-only request; retry when the connection drops or Metabase reports an error.
+
+    A slow answer is not retried: the query may still be running, and sending it again adds load."""
     for wait in (*waits, None):
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -45,14 +47,18 @@ def fetch(req, timeout, waits=(5, 20, 60)):
             problem = f"Metabase returned HTTP {e.code}"
             if e.code < 500 and e.code != 429:
                 raise RuntimeError(problem) from None      # wrong key, bad query: retrying will not help
+        except TimeoutError:
+            raise RuntimeError(f"Metabase did not answer within {timeout} s") from None
         except (OSError, http.client.HTTPException, ValueError) as e:
+            if isinstance(getattr(e, "reason", None), TimeoutError):
+                raise RuntimeError(f"Metabase did not answer within {timeout} s") from None
             problem = f"Could not reach Metabase: {getattr(e, 'reason', e)}"
         if wait is None:
             raise RuntimeError(problem)
         time.sleep(wait)
 
 
-def query(sql, params=None, timeout=120):
+def query(sql, params=None, timeout=240):
     """Run a native query and return a list of dicts with UPPER-CASE keys.
 
     Uses the JSON export endpoint because /api/dataset stops at 2000 rows.

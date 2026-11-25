@@ -901,7 +901,7 @@ function renderWiomNetCurrent(dateStr) {
 // Initial render is triggered by activate() once the tab is visible,
 // so the Chart.js canvas has proper dimensions. See activate() below.
 })();
-</script></section>@@MONTH_SECTIONS@@
+</script></section>@@MONTH_SECTIONS@@@@CALLBACK_SECTION@@
 <section id="tab-mom" class="tab-panel">
 
   <h3 style="margin:0 0 8px;font-size:14px;font-weight:600;color:#C62828;">&#128222; Missed Call % &mdash; Month on Month</h3><div id="missChartWrap" class="chart-wrap" style="position:relative;height:240px;width:100%;overflow:hidden;margin-bottom:16px;"><canvas id="missMomChart"></canvas></div><div style="overflow-x:auto;margin-bottom:32px;">@@MISS_TABLE@@</div>
@@ -1050,6 +1050,8 @@ function activate(id) {
   statAht.textContent  = PER_TAB_AHT[id] || '-';
   statPaying.textContent = PER_TAB_PAYING[id] !== undefined ? fmtNum(PER_TAB_PAYING[id]) : '-';
   statActive.textContent = PER_TAB_ACTIVE[id] !== undefined ? fmtNum(PER_TAB_ACTIVE[id]) : '-';
+
+  if (id === 'tab-callback' && window.renderCallback) renderCallback();
 
   // toggle highlight bars per tab
   document.querySelectorAll('.hl-tab').forEach(el => {

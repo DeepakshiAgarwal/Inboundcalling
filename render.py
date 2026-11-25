@@ -4,6 +4,7 @@ import html
 import json
 from pathlib import Path
 
+import callback
 from logic import PALETTE, PREV_WINDOWS, Model, mean, mmss, month_label, prev_month, spike_pct
 
 TEMPLATE = Path(__file__).with_name("templates") / "page.html"
@@ -198,12 +199,13 @@ def render(store):
         "HIGHLIGHTS": "\n".join(filter(None, (highlights_bar(m, ym) for ym in m.months))),
         "TABS": tab_button("tab-current", "&#9679; Current")
                 + "".join(tab_button("tab-" + ym, month_label(ym)) for ym in months)
-                + tab_button("tab-mom", "MoM Comparison"),
+                + tab_button("tab-mom", "MoM Comparison") + tab_button("tab-callback", "Callback Calls"),
         "DATE_OPTIONS": "\n    ".join(date_option(m, d) for d in m.current_dates()),
         "TODAY": m.today,
         "PAYLOAD": compact(payload), "ALL_T": compact(all_t), "ISD_DAILY": compact(m.isd_daily()),
         "WN_PAYLOAD": compact(wn_payload), "WN_ALL_T": compact(wn_all_t), "WN_MW": compact(wn_mw),
         "MONTH_SECTIONS": "".join(month_section(m, ym) for ym in months),
+        "CALLBACK_SECTION": callback.section(store)[0],
         "MISS_TABLE": pct_table(m, "Missed %", svc_miss, wn_miss),
         "CSAT_TABLE": pct_table(m, "CSAT %", svc_csat, wn_csat),
         "CLASS_OPTIONS": "\n      ".join(f'<option value="{esc(c)}">{esc(c)}</option>' for c in cats),
